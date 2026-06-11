@@ -1,0 +1,226 @@
+// BizSocial360 data model.
+// Provider: PostgreSQL — targets Azure Database for PostgreSQL Flexible Server.
+// See docs/adr/0003-azure-database-for-postgresql.md for the rationale.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Platform {
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+}
+
+enum ContentType {
+  POST
+  STORY
+  REEL
+  VIDEO
+}
+
+enum CommentStatus {
+  NEW
+  PENDING
+  RESPONDED
+  ARCHIVED
+}
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  ANALYST
+  VIEWER
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String?
+  displayName  String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  memberships  Membership[]
+  auditLogs    AuditLog[]
+}
+
+model Organization {
+  id             String          @id @default(cuid())
+  name           String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  memberships    Membership[]
+  socialAccounts SocialAccount[]
+}
+
+model Membership {
+  id             String       @id @default(cuid())
+  role           MemberRole   @default(VIEWER)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  createdAt      DateTime     @default(now())
+
+  @@unique([userId, organizationId])
+}
+
+model SocialAccount {
+  id             String          @id @default(cuid())
+  platform       Platform
+  externalId     String
+  handle         String
+  displayName    String
+  followers      Int             @default(0)
+  connected      Boolean         @default(true)
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId String
+  oauthToken     OAuthToken?
+  posts          Post[]
+  stories        Story[]
+  comments       Comment[]
+  publishWindows PublishWindow[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([platform, externalId])
+  @@index([organizationId])
+}
+
+model OAuthToken {
+  id           String        @id @default(cuid())
+  account      SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId    String        @unique
+  // Store encrypted at rest via app-level encryption — never plaintext.
+  accessToken  String
+  refreshToken String?
+  scope        String?
+  expiresAt    DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Post {
+  id          String        @id @default(cuid())
+  account     SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId   String
+  externalId  String
+  contentType ContentType   @default(POST)
+  caption     String        @default("")
+  permalink   String?
+  publishedAt DateTime
+  metrics     PostMetric[]
+  comments    Comment[]
+  createdAt   DateTime      @default(now())
+
+  @@unique([accountId, externalId])
+  @@index([accountId, publishedAt])
+}
+
+model Story {
+  id          String        @id @default(cuid())
+  account     SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId   String
+  externalId  String
+  publishedAt DateTime
+  expiresAt   DateTime?
+  metrics     StoryMetric[]
+  createdAt   DateTime      @default(now())
+
+  @@unique([accountId, externalId])
+  @@index([accountId, publishedAt])
+}
+
+model PostMetric {
+  id             String   @id @default(cuid())
+  post           Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  postId         String
+  capturedAt     DateTime @default(now())
+  impressions    Int      @default(0)
+  reach          Int      @default(0)
+  views          Int      @default(0)
+  likes          Int      @default(0)
+  comments       Int      @default(0)
+  shares         Int      @default(0)
+  saves          Int      @default(0)
+  engagementRate Float    @default(0)
+
+  @@index([postId, capturedAt])
+}
+
+model StoryMetric {
+  id          String   @id @default(cuid())
+  story       Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  storyId     String
+  capturedAt  DateTime @default(now())
+  impressions Int      @default(0)
+  reach       Int      @default(0)
+  views       Int      @default(0)
+  exits       Int      @default(0)
+  replies     Int      @default(0)
+  tapsForward Int      @default(0)
+  tapsBack    Int      @default(0)
+
+  @@index([storyId, capturedAt])
+}
+
+model Comment {
+  id          String        @id @default(cuid())
+  account     SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId   String
+  post        Post?         @relation(fields: [postId], references: [id], onDelete: SetNull)
+  postId      String?
+  externalId  String
+  author      String
+  message     String
+  status      CommentStatus @default(NEW)
+  receivedAt  DateTime
+  respondedAt DateTime?
+  createdAt   DateTime      @default(now())
+
+  @@unique([accountId, externalId])
+  @@index([accountId, status])
+}
+
+model PublishWindow {
+  id                     String        @id @default(cuid())
+  account                SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId              String
+  contentType            ContentType
+  dayOfWeek              Int // 0 (Sun) .. 6 (Sat)
+  hourOfDay              Int // 0 .. 23
+  confidence             Float         @default(0)
+  expectedEngagementRate Float         @default(0)
+  computedAt             DateTime      @default(now())
+
+  @@unique([accountId, contentType, dayOfWeek, hourOfDay])
+}
+
+model InsightRecommendation {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  summary        String
+  confidence     Float    @default(0)
+  sources        String[] // record IDs the insight was derived from
+  generatedAt    DateTime @default(now())
+
+  @@index([organizationId, generatedAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId    String?
+  action    String
+  target    String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

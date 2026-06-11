@@ -1,0 +1,25 @@
+# Local development services for BizSocial360.
+# Mirrors the Azure Database for PostgreSQL Flexible Server used in the cloud.
+# Usage: docker compose -f infra/docker-compose.yml up -d
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bizsocial360-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bizsocial
+      POSTGRES_PASSWORD: bizsocial
+      POSTGRES_DB: bizsocial360
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U bizsocial -d bizsocial360']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

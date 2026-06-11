@@ -1,0 +1,9 @@
+node_modules
+dist
+build
+.next
+.turbo
+coverage
+apps/api/src/db/generated
+package-lock.json
+pnpm-lock.yaml
