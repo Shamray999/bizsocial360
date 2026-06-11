@@ -126,7 +126,13 @@ open the web app immediately; start the API for "live" data.
 | `npm run format`        | Format with Prettier                              |
 | `npm run db:generate`   | Generate the Prisma client                        |
 | `npm run db:migrate`    | Create/apply a dev migration                      |
+| `npm run db:local`      | Run a local PostgreSQL (embedded, no Docker)      |
+| `npm run db:seed`       | Seed demo data into the database                  |
 | `npm run db:studio`     | Open Prisma Studio                                |
+| `npm run test`          | Run unit + integration tests                      |
+| `npm run test:unit`     | API unit tests                                    |
+| `npm run test:integration` | API integration tests (Fastify inject)         |
+| `npm run test:e2e`      | Web end-to-end tests (Playwright)                 |
 | `npm run mcp:dev`       | Run the MCP server over stdio                     |
 
 ## Public API
@@ -146,11 +152,52 @@ When the API is running, explore the OpenAPI docs at
 See [`infra/README.md`](infra/README.md) for local Docker and Azure Bicep
 deployment instructions.
 
+## Testing
+
+Three layers, all runnable from the repo root:
+
+- **Unit** (`npm run test:unit`) — pure logic: token encryption, OAuth state
+  signing, engagement aggregation, provider adapter wiring. Node's built-in test
+  runner via `tsx`.
+- **Integration** (`npm run test:integration`) — the Fastify app exercised
+  in-process with `app.inject()`. Public endpoints are asserted in a
+  database-agnostic way; the auth + connections + sync suite runs when a
+  `DATABASE_URL` is available (otherwise it is skipped).
+- **End-to-end** (`npm run test:e2e`) — Playwright drives the dashboard and
+  login pages. Locally it boots the Next.js dev server automatically; set
+  `E2E_BASE_URL` to run against a deployed environment instead.
+
+## CI/CD
+
+Two GitHub Actions workflows (private repo):
+
+- [`ci.yml`](.github/workflows/ci.yml) — on every push/PR to `main`/`develop`:
+  lint, typecheck, build, and unit + integration tests against a Postgres
+  service container.
+- [`deploy-staging.yml`](.github/workflows/deploy-staging.yml) — on push to
+  `develop` (or manual dispatch): re-verifies (lint/typecheck/test/build),
+  deploys the API and web to the Azure **staging** environment, then runs the
+  Playwright e2e suite against the live staging URL.
+
+The staging deploy requires these to be configured under
+**Settings → Secrets and variables → Actions** (and a `staging` Environment):
+
+| Kind     | Name                    | Purpose                                  |
+| -------- | ----------------------- | ---------------------------------------- |
+| Secret   | `AZURE_CLIENT_ID`       | OIDC app registration client id          |
+| Secret   | `AZURE_TENANT_ID`       | Azure AD tenant id                       |
+| Secret   | `AZURE_SUBSCRIPTION_ID` | Azure subscription id                    |
+| Secret   | `STAGING_DATABASE_URL`  | Staging PostgreSQL connection string     |
+| Variable | `AZURE_API_APP_NAME`    | App Service name for the API             |
+| Variable | `AZURE_WEB_APP_NAME`    | App Service name for the web app         |
+| Variable | `STAGING_API_URL`       | Staging API URL (baked into the web build) |
+| Variable | `STAGING_WEB_URL`       | Staging web URL (e2e target)             |
+
 ## Roadmap
 
 1. **Phase 1 — Bootstrap** ✅ monorepo, client, API, DB schema, MCP, ADRs, CI.
-2. **Phase 2 — Core platform** auth, organizations, account linking.
-3. **Phase 3 — Provider ingestion** Facebook & Instagram via Graph API; TikTok adapter.
+2. **Phase 2 — Core platform** ✅ auth, organizations, account linking.
+3. **Phase 3 — Provider ingestion** ✅ Facebook & Instagram via Graph API; TikTok adapter.
 4. **Phase 4 — Insights** analytics, response queue, publish-time engine, AI summaries.
 5. **Phase 5 — Public API & MCP** hardened external contracts.
 6. **Phase 6 — Cloud** Azure deploy, CI/CD gates, observability.

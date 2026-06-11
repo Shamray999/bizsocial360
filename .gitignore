@@ -30,6 +30,16 @@ coverage/
 apps/api/src/db/generated/
 prisma/*.db
 
+# Local embedded Postgres data directory
+apps/api/.pgdata/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+/apps/web/playwright/.cache/
+
 # Editor / OS
 .DS_Store
 Thumbs.db

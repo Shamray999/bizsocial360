@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import { corsOrigins, env } from './config/env.js';
+import { registerAuth } from './plugins/auth.js';
 import { registerSwagger } from './plugins/swagger.js';
 import { registerRoutes } from './routes/index.js';
 
@@ -26,6 +27,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(cors, { origin: corsOrigins });
 
+  // Auth must be registered before routes so `app.authenticate` is available.
+  await registerAuth(app);
   await registerSwagger(app);
   await registerRoutes(app);
 

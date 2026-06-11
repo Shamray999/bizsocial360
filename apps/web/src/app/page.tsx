@@ -1,13 +1,19 @@
 import { MetricCard } from '@/components/MetricCard';
 import { PlatformBadge } from '@/components/PlatformBadge';
+import { ConnectAccounts } from '@/components/ConnectAccounts';
 import { getDashboardData } from '@/lib/api';
 import { formatNumber, formatPercent, formatWaiting, formatWindow } from '@/lib/format';
 
 // Always render fresh data on each request.
 export const dynamic = 'force-dynamic';
 
-export default async function DashboardPage() {
+interface DashboardPageProps {
+  searchParams: Promise<{ connected?: string; accounts?: string; connect_error?: string }>;
+}
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const data = await getDashboardData();
+  const params = await searchParams;
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -31,11 +37,27 @@ export default async function DashboardPage() {
         </span>
       </header>
 
+      {/* Post-OAuth status banner */}
+      {params.connected ? (
+        <div className="mt-6 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          Connected {params.connected}
+          {params.accounts ? ` · ${params.accounts} account(s) linked` : ''}.
+        </div>
+      ) : null}
+      {params.connect_error ? (
+        <div className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          Connection failed: {params.connect_error}
+        </div>
+      ) : null}
+
       {/* Connected accounts */}
       <section className="mt-8">
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Connected accounts
-        </h2>
+        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            Connected accounts
+          </h2>
+          <ConnectAccounts />
+        </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {data.accounts.map((account) => (
             <div

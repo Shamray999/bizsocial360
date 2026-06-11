@@ -45,3 +45,51 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  test:
+    name: Unit & integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: bizsocial
+          POSTGRES_PASSWORD: bizsocial
+          POSTGRES_DB: bizsocial360
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bizsocial -d bizsocial360"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://bizsocial:bizsocial@localhost:5432/bizsocial360?schema=public
+      # Non-secret values used only to satisfy config validation in CI.
+      TOKEN_ENCRYPTION_KEY: 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+      JWT_SECRET: ci-jwt-secret
+      OAUTH_STATE_SECRET: ci-oauth-state-secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Apply database migrations
+        run: npm run db:deploy --workspace apps/api
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Integration tests
+        run: npm run test:integration

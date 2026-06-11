@@ -17,8 +17,20 @@ export async function registerSwagger(app: FastifyInstance): Promise<void> {
         version: '0.1.0',
       },
       servers: [{ url: '/', description: 'Current host' }],
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
+            description: 'Session token from /auth/login or /auth/register.',
+          },
+        },
+      },
       tags: [
         { name: 'system', description: 'Health and readiness probes' },
+        { name: 'auth', description: 'App authentication (sign in / sessions)' },
+        { name: 'connections', description: 'Connect social accounts via provider OAuth' },
         { name: 'accounts', description: 'Connected social accounts' },
         { name: 'insights', description: 'Engagement metrics and recommendations' },
         { name: 'comments', description: 'Customer comment response queue' },

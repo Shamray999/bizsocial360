@@ -1,13 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { isPlatform, type Platform } from '@bizsocial360/shared';
 import {
-  sampleAccounts,
-  sampleContentInsights,
-  samplePendingComments,
-  samplePublishWindows,
-  sampleRecommendations,
-  summarizeEngagement,
-} from '../../services/sample-data.js';
+  getAccounts,
+  getContentInsights,
+  getEngagementSummary,
+  getPendingComments,
+  getPublishWindows,
+  getRecommendations,
+} from '../../services/insights.service.js';
 
 interface PlatformQuery {
   platform?: string;
@@ -20,10 +20,18 @@ function parsePlatform(value?: string): Platform | undefined {
   return undefined;
 }
 
+const platformQuerySchema = {
+  type: 'object',
+  properties: {
+    platform: { type: 'string', enum: ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'] },
+  },
+} as const;
+
 /**
  * Public API v1. Read-only engagement insights for external consumers.
- * Currently backed by deterministic sample data; swap for Prisma-backed
- * services once provider ingestion lands (Phase 3).
+ * Thin adapter over the shared insights service (ADR-0005): returns the active
+ * organization's Prisma-backed data once accounts are connected, and falls back
+ * to deterministic sample data in demo mode.
  */
 export async function publicApiV1Routes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: PlatformQuery }>(
@@ -32,21 +40,10 @@ export async function publicApiV1Routes(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['accounts'],
         summary: 'List connected social accounts',
-        querystring: {
-          type: 'object',
-          properties: {
-            platform: { type: 'string', enum: ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'] },
-          },
-        },
+        querystring: platformQuerySchema,
       },
     },
-    async (request) => {
-      const platform = parsePlatform(request.query.platform);
-      const accounts = platform
-        ? sampleAccounts.filter((account) => account.platform === platform)
-        : sampleAccounts;
-      return { data: accounts };
-    },
+    async (request) => ({ data: await getAccounts(parsePlatform(request.query.platform)) }),
   );
 
   app.get<{ Querystring: PlatformQuery }>(
@@ -55,21 +52,12 @@ export async function publicApiV1Routes(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['insights'],
         summary: 'Aggregated engagement summary',
-        querystring: {
-          type: 'object',
-          properties: {
-            platform: { type: 'string', enum: ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'] },
-          },
-        },
+        querystring: platformQuerySchema,
       },
     },
-    async (request) => {
-      const platform = parsePlatform(request.query.platform);
-      const insights = platform
-        ? sampleContentInsights.filter((item) => item.platform === platform)
-        : sampleContentInsights;
-      return { data: summarizeEngagement(insights) };
-    },
+    async (request) => ({
+      data: await getEngagementSummary(parsePlatform(request.query.platform)),
+    }),
   );
 
   app.get<{ Querystring: PlatformQuery }>(
@@ -78,21 +66,12 @@ export async function publicApiV1Routes(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['insights'],
         summary: 'Per-post / per-story engagement insights',
-        querystring: {
-          type: 'object',
-          properties: {
-            platform: { type: 'string', enum: ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'] },
-          },
-        },
+        querystring: platformQuerySchema,
       },
     },
-    async (request) => {
-      const platform = parsePlatform(request.query.platform);
-      const insights = platform
-        ? sampleContentInsights.filter((item) => item.platform === platform)
-        : sampleContentInsights;
-      return { data: insights };
-    },
+    async (request) => ({
+      data: await getContentInsights(parsePlatform(request.query.platform)),
+    }),
   );
 
   app.get(
@@ -103,7 +82,7 @@ export async function publicApiV1Routes(app: FastifyInstance): Promise<void> {
         summary: 'AI-generated insight recommendations',
       },
     },
-    async () => ({ data: sampleRecommendations }),
+    async () => ({ data: await getRecommendations() }),
   );
 
   app.get<{ Querystring: PlatformQuery }>(
@@ -112,21 +91,12 @@ export async function publicApiV1Routes(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['insights'],
         summary: 'Recommended publishing windows',
-        querystring: {
-          type: 'object',
-          properties: {
-            platform: { type: 'string', enum: ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'] },
-          },
-        },
+        querystring: platformQuerySchema,
       },
     },
-    async (request) => {
-      const platform = parsePlatform(request.query.platform);
-      const windows = platform
-        ? samplePublishWindows.filter((item) => item.platform === platform)
-        : samplePublishWindows;
-      return { data: windows };
-    },
+    async (request) => ({
+      data: await getPublishWindows(parsePlatform(request.query.platform)),
+    }),
   );
 
   app.get<{ Querystring: PlatformQuery }>(
@@ -135,20 +105,11 @@ export async function publicApiV1Routes(app: FastifyInstance): Promise<void> {
       schema: {
         tags: ['comments'],
         summary: 'Customer comments awaiting a response',
-        querystring: {
-          type: 'object',
-          properties: {
-            platform: { type: 'string', enum: ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'] },
-          },
-        },
+        querystring: platformQuerySchema,
       },
     },
-    async (request) => {
-      const platform = parsePlatform(request.query.platform);
-      const comments = platform
-        ? samplePendingComments.filter((item) => item.platform === platform)
-        : samplePendingComments;
-      return { data: comments };
-    },
+    async (request) => ({
+      data: await getPendingComments(parsePlatform(request.query.platform)),
+    }),
   );
 }

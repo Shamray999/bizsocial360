@@ -76,3 +76,22 @@ export interface InsightRecommendation {
   sources: string[];
   generatedAt: string;
 }
+
+/** Role a user holds within an organization (mirrors the Prisma enum). */
+export type MemberRole = 'OWNER' | 'ADMIN' | 'ANALYST' | 'VIEWER';
+
+/** The authenticated user returned by the app-auth endpoints. */
+export interface AuthUser {
+  id: string;
+  email: string;
+  displayName: string;
+  /** The organization the session is currently scoped to. */
+  organizationId: string;
+  role: MemberRole;
+}
+
+/** Response body for a successful register/login: a session token + user. */
+export interface AuthSession {
+  token: string;
+  user: AuthUser;
+}
