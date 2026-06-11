@@ -19,10 +19,13 @@
 
 name: Deploy to staging
 
-# NOTE: Staging deployment is owned by Azure DevOps Pipelines (azure-pipelines.yml).
-# This GitHub workflow is kept as a manual-only fallback to avoid double-deploying
-# on push to `develop`. Run it from the Actions tab via "Run workflow".
+# Staging deployment: verify → deploy API + web to Azure → e2e against staging.
+# Runs on push to `develop` and can be triggered manually from the Actions tab.
+# The deploy + e2e jobs skip cleanly until the Azure config (secrets/vars) is set,
+# so this is safe to run before Azure is provisioned.
 on:
+  push:
+    branches: [develop]
   workflow_dispatch:
 
 concurrency:
