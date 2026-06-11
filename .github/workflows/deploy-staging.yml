@@ -75,6 +75,10 @@ jobs:
   deploy:
     name: Deploy to Azure (staging)
     needs: verify
+    # Skip cleanly (instead of failing at Azure login) until the Azure config is
+    # present. Deployment is owned by Azure DevOps; this only runs if you opt in
+    # by setting the AZURE_API_APP_NAME variable (and the related secrets/vars).
+    if: ${{ vars.AZURE_API_APP_NAME != '' }}
     runs-on: ubuntu-latest
     environment:
       name: staging
