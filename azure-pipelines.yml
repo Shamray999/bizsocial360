@@ -1,13 +1,20 @@
 # BizSocial360 — Azure DevOps deployment pipeline.
 #
-# Pipeline: verify (lint, typecheck, unit + integration tests, build) → deploy to
-# the Azure staging environment → end-to-end tests against the live staging URL.
+# Pipeline: verify (lint, typecheck, unit + integration tests, build) → optionally
+# deploy to the Azure staging environment → end-to-end tests against staging.
 #
-# ── One-time setup in Azure DevOps ───────────────────────────────────────────
+# The Verify stage always runs and needs NO Azure configuration. The deploy and
+# e2e stages are gated behind the `deployToStaging` parameter (default: false) so
+# the pipeline stays green on every push while Azure is not yet wired up. They are
+# compiled out entirely when the parameter is false — this matters because Azure
+# DevOps validates referenced service connections and variable groups at queue
+# time even for skipped stages, so a plain `condition:` is not enough.
+#
+# ── To enable deployment ─────────────────────────────────────────────────────
 # 1. Project Settings → Service connections → create an **Azure Resource Manager**
-#    service connection (this authorizes deployments to your subscription).
+#    service connection (authorizes deployments to your subscription).
 # 2. Pipelines → Library → create a **variable group** named `bizsocial360-staging`
-#    with the variables below (mark STAGING_DATABASE_URL as secret):
+#    (mark STAGING_DATABASE_URL as secret):
 #
 #      azureServiceConnection  Name of the ARM service connection from step 1
 #      apiAppName              App Service name hosting the API (from Bicep output)
@@ -16,11 +23,17 @@
 #      stagingWebUrl           Public URL of the staging web app (the e2e target)
 #      STAGING_DATABASE_URL    PostgreSQL connection string (secret)
 #
-# 3. Pipelines → New pipeline → point at this repo (GitHub) and select this file.
-# 4. Pipelines → Environments → create an environment named `staging`
-#    (optionally add approval checks/gates there).
+# 3. Pipelines → Environments → create an environment named `staging`.
+# 4. Run the pipeline with the "Deploy to Azure staging" parameter set to true
+#    (Run pipeline → Variables/Parameters), or set the default below to true.
 #
 # App Services are provisioned by infra/azure/main.bicep — deploy that first.
+
+parameters:
+  - name: deployToStaging
+    displayName: Deploy to Azure staging
+    type: boolean
+    default: false
 
 trigger:
   branches:
@@ -96,118 +109,120 @@ stages:
           - script: npm run build
             displayName: Build
 
-  # ───────────────────────────────────────────────────────────────────────────
-  - stage: DeployStaging
-    displayName: Deploy to Azure (staging)
-    dependsOn: Verify
-    condition: succeeded()
-    # The staging variable group is only needed from here on, so the Verify stage
-    # runs without any Azure configuration.
-    variables:
-      - group: bizsocial360-staging
-    jobs:
-      - deployment: deploy
-        displayName: Deploy API & web
-        pool:
-          vmImage: ubuntu-latest
-        environment: staging
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
-
-                - task: NodeTool@0
-                  displayName: Use Node.js $(nodeVersion)
-                  inputs:
-                    versionSpec: $(nodeVersion)
-
-                - script: npm ci
-                  displayName: Install dependencies
-
-                - script: npm run db:generate
-                  displayName: Generate Prisma client
-
-                - script: npm run build --workspace apps/api
-                  displayName: Build API
-
-                - script: npm run build --workspace apps/web
-                  displayName: Build web (staging API URL baked in)
-                  env:
-                    API_URL: $(stagingApiUrl)
-                    NEXT_PUBLIC_API_URL: $(stagingApiUrl)
-
-                - task: AzureCLI@2
-                  displayName: Apply database migrations (staging)
-                  inputs:
-                    azureSubscription: $(azureServiceConnection)
-                    scriptType: bash
-                    scriptLocation: inlineScript
-                    inlineScript: npm run db:deploy --workspace apps/api
-                  env:
-                    DATABASE_URL: $(STAGING_DATABASE_URL)
-
-                - task: AzureWebApp@1
-                  displayName: Deploy API to App Service
-                  inputs:
-                    azureSubscription: $(azureServiceConnection)
-                    appType: webAppLinux
-                    appName: $(apiAppName)
-                    package: apps/api
-                    startUpCommand: 'node dist/server.js'
-
-                - task: AzureWebApp@1
-                  displayName: Deploy web to App Service
-                  inputs:
-                    azureSubscription: $(azureServiceConnection)
-                    appType: webAppLinux
-                    appName: $(webAppName)
-                    package: apps/web
-                    startUpCommand: 'npm run start'
-
-  # ───────────────────────────────────────────────────────────────────────────
-  - stage: E2E
-    displayName: E2E against staging
-    dependsOn: DeployStaging
-    condition: succeeded()
-    variables:
-      - group: bizsocial360-staging
-    jobs:
-      - job: e2e
-        displayName: Playwright e2e
-        pool:
-          vmImage: ubuntu-latest
+  # The deploy + e2e stages are only compiled into the pipeline when
+  # deployToStaging is true, so the pipeline validates and runs green without
+  # any Azure service connection or variable group configured.
+  - ${{ if eq(parameters.deployToStaging, true) }}:
+      # ─────────────────────────────────────────────────────────────────────
+      - stage: DeployStaging
+        displayName: Deploy to Azure (staging)
+        dependsOn: Verify
+        condition: succeeded()
         variables:
-          CI: 'true'
-          E2E_BASE_URL: $(stagingWebUrl)
-        steps:
-          - task: NodeTool@0
-            displayName: Use Node.js $(nodeVersion)
-            inputs:
-              versionSpec: $(nodeVersion)
+          - group: bizsocial360-staging
+        jobs:
+          - deployment: deploy
+            displayName: Deploy API & web
+            pool:
+              vmImage: ubuntu-latest
+            environment: staging
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - checkout: self
 
-          - script: npm ci
-            displayName: Install dependencies
+                    - task: NodeTool@0
+                      displayName: Use Node.js $(nodeVersion)
+                      inputs:
+                        versionSpec: $(nodeVersion)
 
-          - script: npx playwright install --with-deps chromium
-            displayName: Install Playwright browser
-            workingDirectory: apps/web
+                    - script: npm ci
+                      displayName: Install dependencies
 
-          - script: npm run test:e2e --workspace apps/web
-            displayName: Run end-to-end tests against staging
+                    - script: npm run db:generate
+                      displayName: Generate Prisma client
 
-          - task: PublishTestResults@2
-            displayName: Publish e2e test results
-            condition: succeededOrFailed()
-            inputs:
-              testResultsFormat: JUnit
-              testResultsFiles: apps/web/test-results/junit.xml
-              testRunTitle: Playwright E2E (staging)
-              failTaskOnFailedTests: false
+                    - script: npm run build --workspace apps/api
+                      displayName: Build API
 
-          - task: PublishPipelineArtifact@1
-            displayName: Publish Playwright report
-            condition: succeededOrFailed()
-            inputs:
-              targetPath: apps/web/playwright-report
-              artifact: playwright-report
+                    - script: npm run build --workspace apps/web
+                      displayName: Build web (staging API URL baked in)
+                      env:
+                        API_URL: $(stagingApiUrl)
+                        NEXT_PUBLIC_API_URL: $(stagingApiUrl)
+
+                    - task: AzureCLI@2
+                      displayName: Apply database migrations (staging)
+                      inputs:
+                        azureSubscription: $(azureServiceConnection)
+                        scriptType: bash
+                        scriptLocation: inlineScript
+                        inlineScript: npm run db:deploy --workspace apps/api
+                      env:
+                        DATABASE_URL: $(STAGING_DATABASE_URL)
+
+                    - task: AzureWebApp@1
+                      displayName: Deploy API to App Service
+                      inputs:
+                        azureSubscription: $(azureServiceConnection)
+                        appType: webAppLinux
+                        appName: $(apiAppName)
+                        package: apps/api
+                        startUpCommand: 'node dist/server.js'
+
+                    - task: AzureWebApp@1
+                      displayName: Deploy web to App Service
+                      inputs:
+                        azureSubscription: $(azureServiceConnection)
+                        appType: webAppLinux
+                        appName: $(webAppName)
+                        package: apps/web
+                        startUpCommand: 'npm run start'
+
+      # ─────────────────────────────────────────────────────────────────────
+      - stage: E2E
+        displayName: E2E against staging
+        dependsOn: DeployStaging
+        condition: succeeded()
+        variables:
+          - group: bizsocial360-staging
+        jobs:
+          - job: e2e
+            displayName: Playwright e2e
+            pool:
+              vmImage: ubuntu-latest
+            variables:
+              CI: 'true'
+              E2E_BASE_URL: $(stagingWebUrl)
+            steps:
+              - task: NodeTool@0
+                displayName: Use Node.js $(nodeVersion)
+                inputs:
+                  versionSpec: $(nodeVersion)
+
+              - script: npm ci
+                displayName: Install dependencies
+
+              - script: npx playwright install --with-deps chromium
+                displayName: Install Playwright browser
+                workingDirectory: apps/web
+
+              - script: npm run test:e2e --workspace apps/web
+                displayName: Run end-to-end tests against staging
+
+              - task: PublishTestResults@2
+                displayName: Publish e2e test results
+                condition: succeededOrFailed()
+                inputs:
+                  testResultsFormat: JUnit
+                  testResultsFiles: apps/web/test-results/junit.xml
+                  testRunTitle: Playwright E2E (staging)
+                  failTaskOnFailedTests: false
+
+              - task: PublishPipelineArtifact@1
+                displayName: Publish Playwright report
+                condition: succeededOrFailed()
+                inputs:
+                  targetPath: apps/web/playwright-report
+                  artifact: playwright-report

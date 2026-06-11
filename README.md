@@ -183,6 +183,11 @@ Three layers, all runnable from the repo root:
   staging-database migration) → **e2e** runs the Playwright suite against the
   live staging URL and publishes the report.
 
+  The deploy and e2e stages are gated behind a `deployToStaging` parameter
+  (default **false**), so the pipeline runs green (Verify only) until Azure is
+  configured. Enable deployment by running the pipeline with the parameter set
+  to true (or flip its default) once the steps below are done.
+
 One-time Azure DevOps setup:
 
 1. **Service connection** — Project Settings → Service connections → create an
