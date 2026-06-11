@@ -30,7 +30,6 @@ trigger:
 pr: none
 
 variables:
-  - group: bizsocial360-staging
   - name: nodeVersion
     value: '22.x'
   # Non-secret values used only to satisfy config validation during CI tests.
@@ -102,6 +101,10 @@ stages:
     displayName: Deploy to Azure (staging)
     dependsOn: Verify
     condition: succeeded()
+    # The staging variable group is only needed from here on, so the Verify stage
+    # runs without any Azure configuration.
+    variables:
+      - group: bizsocial360-staging
     jobs:
       - deployment: deploy
         displayName: Deploy API & web
@@ -167,6 +170,8 @@ stages:
     displayName: E2E against staging
     dependsOn: DeployStaging
     condition: succeeded()
+    variables:
+      - group: bizsocial360-staging
     jobs:
       - job: e2e
         displayName: Playwright e2e
