@@ -169,29 +169,44 @@ Three layers, all runnable from the repo root:
 
 ## CI/CD
 
-Two GitHub Actions workflows (private repo):
+**Continuous integration — GitHub Actions** (runs on the GitHub repo):
 
 - [`ci.yml`](.github/workflows/ci.yml) — on every push/PR to `main`/`develop`:
   lint, typecheck, build, and unit + integration tests against a Postgres
   service container.
-- [`deploy-staging.yml`](.github/workflows/deploy-staging.yml) — on push to
-  `develop` (or manual dispatch): re-verifies (lint/typecheck/test/build),
-  deploys the API and web to the Azure **staging** environment, then runs the
-  Playwright e2e suite against the live staging URL.
 
-The staging deploy requires these to be configured under
-**Settings → Secrets and variables → Actions** (and a `staging` Environment):
+**Staging deployment — Azure DevOps Pipelines** (owns deploys to Azure):
 
-| Kind     | Name                    | Purpose                                  |
-| -------- | ----------------------- | ---------------------------------------- |
-| Secret   | `AZURE_CLIENT_ID`       | OIDC app registration client id          |
-| Secret   | `AZURE_TENANT_ID`       | Azure AD tenant id                       |
-| Secret   | `AZURE_SUBSCRIPTION_ID` | Azure subscription id                    |
-| Secret   | `STAGING_DATABASE_URL`  | Staging PostgreSQL connection string     |
-| Variable | `AZURE_API_APP_NAME`    | App Service name for the API             |
-| Variable | `AZURE_WEB_APP_NAME`    | App Service name for the web app         |
-| Variable | `STAGING_API_URL`       | Staging API URL (baked into the web build) |
-| Variable | `STAGING_WEB_URL`       | Staging web URL (e2e target)             |
+- [`azure-pipelines.yml`](azure-pipelines.yml) — on push to `develop`:
+  **verify** (lint/typecheck/test/build against a Dockerized Postgres) →
+  **deploy** the API and web to the Azure **staging** App Services (with a
+  staging-database migration) → **e2e** runs the Playwright suite against the
+  live staging URL and publishes the report.
+
+One-time Azure DevOps setup:
+
+1. **Service connection** — Project Settings → Service connections → create an
+   **Azure Resource Manager** connection to your subscription.
+2. **Variable group** — Pipelines → Library → create `bizsocial360-staging`:
+
+   | Variable                | Secret | Purpose                                    |
+   | ----------------------- | :----: | ------------------------------------------ |
+   | `azureServiceConnection`|        | Name of the ARM service connection         |
+   | `apiAppName`            |        | App Service name for the API (Bicep output)|
+   | `webAppName`            |        | App Service name for the web app           |
+   | `stagingApiUrl`         |        | Staging API URL (baked into the web build) |
+   | `stagingWebUrl`         |        | Staging web URL (e2e target)               |
+   | `STAGING_DATABASE_URL`  |   ✓    | Staging PostgreSQL connection string       |
+
+3. **Pipeline** — Pipelines → New pipeline → select this repo and
+   `azure-pipelines.yml`.
+4. **Environment** — Pipelines → Environments → create `staging` (add approval
+   checks here if desired).
+
+App Services are provisioned by [`infra/azure/main.bicep`](infra/azure/main.bicep) —
+deploy that first. The GitHub [`deploy-staging.yml`](.github/workflows/deploy-staging.yml)
+workflow remains as a **manual-only fallback** (so it never double-deploys
+alongside Azure DevOps).
 
 ## Roadmap
 

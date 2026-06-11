@@ -19,9 +19,10 @@
 
 name: Deploy to staging
 
+# NOTE: Staging deployment is owned by Azure DevOps Pipelines (azure-pipelines.yml).
+# This GitHub workflow is kept as a manual-only fallback to avoid double-deploying
+# on push to `develop`. Run it from the Actions tab via "Run workflow".
 on:
-  push:
-    branches: [develop]
   workflow_dispatch:
 
 concurrency:
